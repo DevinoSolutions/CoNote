@@ -414,6 +414,19 @@ importers:
 
   packages/conote-ai-core: {}
 
+  packages/conote-extension-ai:
+    dependencies:
+      '@conote/ai-core':
+        specifier: workspace:^
+        version: link:../conote-ai-core
+    devDependencies:
+      '@tiptap/core':
+        specifier: workspace:^
+        version: link:../core
+      '@tiptap/pm':
+        specifier: workspace:^
+        version: link:../pm
+
   packages/core:
     devDependencies:
       '@tiptap/pm':
