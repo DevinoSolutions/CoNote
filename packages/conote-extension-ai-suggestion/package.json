@@ -1,0 +1,57 @@
+{
+  "name": "@conote/extension-ai-suggestion",
+  "version": "0.1.0",
+  "description": "Rule-based AI proofreading suggestions for Tiptap: inline decorations you can accept or reject individually or in bulk. Part of CoNote, an open-source fork of Tiptap.",
+  "keywords": [
+    "conote",
+    "tiptap",
+    "tiptap extension",
+    "ai",
+    "llm",
+    "proofreading",
+    "suggestions"
+  ],
+  "homepage": "https://github.com/DevinoSolutions/CoNote",
+  "bugs": {
+    "url": "https://github.com/DevinoSolutions/CoNote/issues"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/DevinoSolutions/CoNote",
+    "directory": "packages/conote-extension-ai-suggestion"
+  },
+  "files": [
+    "src",
+    "dist"
+  ],
+  "type": "module",
+  "main": "dist/index.cjs",
+  "module": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": {
+        "import": "./dist/index.d.ts",
+        "require": "./dist/index.d.cts"
+      },
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    }
+  },
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch --sourcemap"
+  },
+  "dependencies": {
+    "@conote/ai-core": "workspace:^"
+  },
+  "devDependencies": {
+    "@tiptap/core": "workspace:^",
+    "@tiptap/pm": "workspace:^"
+  },
+  "peerDependencies": {
+    "@tiptap/core": "workspace:*",
+    "@tiptap/pm": "workspace:*"
+  }
+}
