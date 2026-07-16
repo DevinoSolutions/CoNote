@@ -107,7 +107,9 @@ describe('AiChanges extension', () => {
     const remaining = changes(editor)
     expect(remaining).toHaveLength(1)
     expect(remaining[0].oldText).toBe('teh ')
-    expect(editor.state.doc.textBetween(remaining[0].range.from, remaining[0].range.to)).toBe('teh ')
+    expect(editor.state.doc.textBetween(remaining[0].range.from, remaining[0].range.to)).toBe(
+      'teh ',
+    )
 
     editor.commands.aiChangesAccept(remaining[0].id)
     expect(editor.getText()).toBe('the big dog')
@@ -227,6 +229,69 @@ describe('AiChanges extension', () => {
     expect(changes(editor)).toHaveLength(0)
   })
 
+  it('proposes zero changes when the model only reflows whitespace', async () => {
+    const provider = new FakeChangeProvider('hello  world')
+    editor = makeEditor(provider, '<p>hello world</p>')
+
+    editor.commands.aiChangesPropose(PROMPT)
+    await vi.waitFor(() => expect(editor.storage.aiChanges.state).toBe('idle'))
+
+    expect(changes(editor)).toHaveLength(0)
+    expect(editor.getText()).toBe('hello world')
+  })
+
+  it('keeps a real edit while ignoring adjacent whitespace-only noise', async () => {
+    // The model both doubles a space (noise) and rewrites "foo" -> "bar" (real).
+    const provider = new FakeChangeProvider('hello  world bar')
+    editor = makeEditor(provider, '<p>hello world foo</p>')
+
+    editor.commands.aiChangesPropose(PROMPT)
+    await vi.waitFor(() => expect(editor.storage.aiChanges.state).toBe('idle'))
+
+    const staged = changes(editor)
+    expect(staged).toHaveLength(1)
+    expect(staged[0].oldText).toBe('foo')
+
+    editor.commands.aiChangesAccept(staged[0].id)
+    // Real edit applied; the whitespace reflow was never surfaced.
+    expect(editor.getText()).toBe('hello world bar')
+  })
+
+  it('accept trims a trailing space that would double against the next word', async () => {
+    const provider = new FakeChangeProvider('unused')
+    editor = makeEditor(provider, '<p>the cat sat</p>')
+
+    // "cat" -> "dog " (stray trailing space) staged directly.
+    editor.commands.aiChangesSet([{ range: { from: 5, to: 8 }, oldText: 'cat', newText: 'dog ' }])
+    const change = changes(editor)[0]
+    editor.commands.aiChangesAccept(change.id)
+
+    expect(editor.getText()).toBe('the dog sat')
+  })
+
+  it('accept of a bare-letter deletion collapses the doubled space', async () => {
+    const provider = new FakeChangeProvider('unused')
+    editor = makeEditor(provider, '<p>a b c</p>')
+
+    // Delete just "b" (not its surrounding spaces).
+    editor.commands.aiChangesSet([{ range: { from: 3, to: 4 }, oldText: 'b', newText: '' }])
+    const change = changes(editor)[0]
+    editor.commands.aiChangesAccept(change.id)
+
+    expect(editor.getText()).toBe('a c')
+  })
+
+  it('accept of a natural word insertion keeps single spacing', async () => {
+    const provider = new FakeChangeProvider('a b c')
+    editor = makeEditor(provider, '<p>a c</p>')
+
+    editor.commands.aiChangesPropose(PROMPT)
+    await vi.waitFor(() => expect(changes(editor)).toHaveLength(1))
+
+    editor.commands.aiChangesAccept(changes(editor)[0].id)
+    expect(editor.getText()).toBe('a b c')
+  })
+
   it('strips markdown code fences from the response', async () => {
     const provider = new FakeChangeProvider('```\nthe dog\n```')
     editor = makeEditor(provider, '<p>the cat</p>')
@@ -285,9 +350,9 @@ describe('AiChanges extension', () => {
     expect(editor.storage.aiChanges.selectedId).toBe(change.id)
 
     const decoration = (aiChangesPluginKey.getState(editor.state)?.decorations.find() ?? [])[0]
-    expect((decoration as unknown as { type: { attrs: { class: string } } }).type.attrs.class).toContain(
-      'conote-ai-change-del--selected',
-    )
+    expect(
+      (decoration as unknown as { type: { attrs: { class: string } } }).type.attrs.class,
+    ).toContain('conote-ai-change-del--selected')
 
     expect(editor.commands.aiChangesSelect(null)).toBe(true)
     expect(editor.storage.aiChanges.selectedId).toBeNull()

@@ -2,14 +2,11 @@ import { Extension } from '@tiptap/core'
 import type { CommandProps } from '@tiptap/core'
 import type { CompletionProvider, CompletionRequest } from '@conote/ai-core'
 
+import { normalizeReplacement } from './apply.js'
 import { buildDocTextIndex, docPlainText, locateSuggestion } from './locate.js'
 import { aiSuggestionPluginKey, createAiSuggestionPlugin } from './plugin.js'
 import { buildSuggestionMessages, parseSuggestionResponse } from './prompts.js'
-import type {
-  AiSuggestionLoadOptions,
-  AiSuggestionOptions,
-  AiSuggestionStorage,
-} from './types.js'
+import type { AiSuggestionLoadOptions, AiSuggestionOptions, AiSuggestionStorage } from './types.js'
 
 /**
  * A single suggested edit located in the document.
@@ -138,7 +135,13 @@ export const AiSuggestion = Extension.create<AiSuggestionOptions>({
           if (!dispatch) {
             return true
           }
-          tr.insertText(suggestion.replacementText, suggestion.range.from, suggestion.range.to)
+          const applied = normalizeReplacement(
+            state.doc,
+            suggestion.range.from,
+            suggestion.range.to,
+            suggestion.replacementText,
+          )
+          tr.insertText(applied.text, applied.from, applied.to)
           tr.setMeta(aiSuggestionPluginKey, { type: 'remove', id })
           return true
         },
@@ -171,7 +174,13 @@ export const AiSuggestion = Extension.create<AiSuggestionOptions>({
           // Apply right-to-left so earlier positions stay valid as we edit.
           const ordered = [...pluginState.suggestions].sort((a, b) => b.range.from - a.range.from)
           for (const suggestion of ordered) {
-            tr.insertText(suggestion.replacementText, suggestion.range.from, suggestion.range.to)
+            const applied = normalizeReplacement(
+              state.doc,
+              suggestion.range.from,
+              suggestion.range.to,
+              suggestion.replacementText,
+            )
+            tr.insertText(applied.text, applied.from, applied.to)
           }
           tr.setMeta(aiSuggestionPluginKey, { type: 'clear' })
           return true

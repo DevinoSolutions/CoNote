@@ -9,19 +9,12 @@ export {
   CHANGE_SELECTED_SUFFIX,
 } from './plugin.js'
 export type { AiChangesPluginState } from './plugin.js'
-export {
-  anchorHunk,
-  buildDocTextIndex,
-  docPlainText,
-} from './locate.js'
+export { anchorHunk, buildDocTextIndex, docPlainText } from './locate.js'
 export type { DocTextIndex } from './locate.js'
-export { diffWords, tokenize } from './diff.js'
+export { collapseWhitespace, diffWords, isWhitespaceOnlyEdit, tokenize } from './diff.js'
 export type { DiffHunk } from './diff.js'
-export {
-  buildChangeMessages,
-  CHANGE_SYSTEM_PROMPT,
-  stripFences,
-} from './prompts.js'
+export { normalizeReplacement } from './apply.js'
+export { buildChangeMessages, CHANGE_SYSTEM_PROMPT, stripFences } from './prompts.js'
 export type {
   AiChange,
   AiChangesOptions,

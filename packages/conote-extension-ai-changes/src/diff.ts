@@ -14,6 +14,22 @@ export interface DiffHunk {
 /** Product of token counts above which we skip the LCS table and fall back to one whole-text hunk. */
 const LCS_BUDGET = 1_000_000
 
+/** Collapses runs of whitespace to a single space and trims, for whitespace-insensitive comparison. */
+export function collapseWhitespace(text: string): string {
+  return text.replace(/\s+/g, ' ').trim()
+}
+
+/**
+ * True when `oldText` and `newText` carry the same visible characters in the same
+ * order and differ only in whitespace (a reflow: single vs double space, stray
+ * leading/trailing space). A word-boundary change such as `ab` -> `a b` is NOT
+ * whitespace-only. Callers use this to drop hunks that would render as noise — a
+ * struck-through word replaced by the identical word.
+ */
+export function isWhitespaceOnlyEdit(oldText: string, newText: string): boolean {
+  return collapseWhitespace(oldText) === collapseWhitespace(newText)
+}
+
 /**
  * Splits text into diff tokens. A token is a word together with its trailing
  * horizontal whitespace (spaces, tabs); each newline is its own token so that

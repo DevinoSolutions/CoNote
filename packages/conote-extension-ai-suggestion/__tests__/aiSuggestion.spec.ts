@@ -15,7 +15,12 @@ afterEach(() => {
 })
 
 const RULES: AiSuggestionOptions['rules'] = [
-  { id: 'spelling', title: 'Spelling & grammar', prompt: 'Fix spelling and grammar.', color: '#f00' },
+  {
+    id: 'spelling',
+    title: 'Spelling & grammar',
+    prompt: 'Fix spelling and grammar.',
+    color: '#f00',
+  },
   { id: 'concise', title: 'Conciseness', prompt: 'Make the text more concise.' },
 ]
 
@@ -166,6 +171,45 @@ describe('AiSuggestion extension', () => {
     expect(editor.state.doc.textBetween(7, 10)).toBe('cat')
   })
 
+  it('apply trims a stray trailing space in the replacement', async () => {
+    const provider = new FakeSuggestionProvider(
+      json([{ ruleId: 'spelling', deleteText: 'cat', replacementText: 'dog ' }]),
+    )
+    editor = makeEditor(provider, '<p>the cat sat</p>')
+
+    editor.commands.aiSuggestionLoad()
+    await vi.waitFor(() => expect(suggestions(editor)).toHaveLength(1))
+
+    editor.commands.aiSuggestionApply(suggestions(editor)[0].id)
+    expect(editor.getText()).toBe('the dog sat')
+  })
+
+  it('apply trims a stray leading space in the replacement', async () => {
+    const provider = new FakeSuggestionProvider(
+      json([{ ruleId: 'spelling', deleteText: 'cat', replacementText: ' dog' }]),
+    )
+    editor = makeEditor(provider, '<p>the cat</p>')
+
+    editor.commands.aiSuggestionLoad()
+    await vi.waitFor(() => expect(suggestions(editor)).toHaveLength(1))
+
+    editor.commands.aiSuggestionApply(suggestions(editor)[0].id)
+    expect(editor.getText()).toBe('the dog')
+  })
+
+  it('apply of a bare-word deletion collapses the doubled space', async () => {
+    const provider = new FakeSuggestionProvider(
+      json([{ ruleId: 'concise', deleteText: 'very', replacementText: '' }]),
+    )
+    editor = makeEditor(provider, '<p>a very big cat</p>')
+
+    editor.commands.aiSuggestionLoad()
+    await vi.waitFor(() => expect(suggestions(editor)).toHaveLength(1))
+
+    editor.commands.aiSuggestionApply(suggestions(editor)[0].id)
+    expect(editor.getText()).toBe('a big cat')
+  })
+
   it('disambiguates repeated matches using beforeText', async () => {
     const provider = new FakeSuggestionProvider(
       json([{ ruleId: 'spelling', deleteText: 'foo', beforeText: 'bar ', replacementText: 'FOO' }]),
@@ -181,7 +225,9 @@ describe('AiSuggestion extension', () => {
 
   it('tolerates a markdown-fenced JSON response', async () => {
     const provider = new FakeSuggestionProvider(
-      '```json\n' + json([{ ruleId: 'spelling', deleteText: 'teh', replacementText: 'the' }]) + '\n```',
+      '```json\n' +
+        json([{ ruleId: 'spelling', deleteText: 'teh', replacementText: 'the' }]) +
+        '\n```',
     )
     editor = makeEditor(provider, '<p>teh cat</p>')
 
@@ -297,9 +343,9 @@ describe('AiSuggestion extension', () => {
     expect(editor.storage.aiSuggestion.selectedId).toBe(target.id)
 
     const decoration = (aiSuggestionPluginKey.getState(editor.state)?.decorations.find() ?? [])[0]
-    expect((decoration as unknown as { type: { attrs: { class: string } } }).type.attrs.class).toContain(
-      'conote-ai-suggestion--selected',
-    )
+    expect(
+      (decoration as unknown as { type: { attrs: { class: string } } }).type.attrs.class,
+    ).toContain('conote-ai-suggestion--selected')
 
     expect(editor.commands.aiSuggestionSelect(null)).toBe(true)
     expect(editor.storage.aiSuggestion.selectedId).toBeNull()

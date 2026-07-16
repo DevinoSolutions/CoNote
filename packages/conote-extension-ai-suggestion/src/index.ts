@@ -8,12 +8,9 @@ export {
   SUGGESTION_SELECTED_CLASS,
 } from './plugin.js'
 export type { AiSuggestionPluginState } from './plugin.js'
-export {
-  buildDocTextIndex,
-  docPlainText,
-  locateSuggestion,
-} from './locate.js'
+export { buildDocTextIndex, docPlainText, locateSuggestion } from './locate.js'
 export type { DocTextIndex } from './locate.js'
+export { normalizeReplacement } from './apply.js'
 export {
   buildSuggestionMessages,
   parseSuggestionResponse,

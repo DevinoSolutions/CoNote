@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { diffWords, tokenize } from '../src/index.js'
+import { collapseWhitespace, diffWords, isWhitespaceOnlyEdit, tokenize } from '../src/index.js'
 
 describe('tokenize', () => {
   it('bundles trailing horizontal whitespace with each word', () => {
@@ -76,6 +76,18 @@ describe('diffWords', () => {
     expect(result).toBe(newText)
   })
 
+  it('flags a reflow (single -> double space) as whitespace-only', () => {
+    const [hunk] = diffWords('hello world', 'hello  world')
+    const oldText = 'hello world'.slice(hunk.oldStart, hunk.oldEnd)
+    expect(isWhitespaceOnlyEdit(oldText, hunk.newText)).toBe(true)
+  })
+
+  it('does not flag a real word change as whitespace-only', () => {
+    const [hunk] = diffWords('the cat', 'the dog')
+    const oldText = 'the cat'.slice(hunk.oldStart, hunk.oldEnd)
+    expect(isWhitespaceOnlyEdit(oldText, hunk.newText)).toBe(false)
+  })
+
   it('falls back to a single whole-text hunk when the token product is too large', () => {
     const oldText = Array.from({ length: 1200 }, (_, i) => `old${i}`).join(' ')
     const newText = Array.from({ length: 1200 }, (_, i) => `new${i}`).join(' ')
@@ -84,5 +96,24 @@ describe('diffWords', () => {
     expect(hunks[0].oldStart).toBe(0)
     expect(hunks[0].oldEnd).toBe(oldText.length)
     expect(hunks[0].newText).toBe(newText)
+  })
+})
+
+describe('isWhitespaceOnlyEdit', () => {
+  it('treats stray leading/trailing spaces and reflows as whitespace-only', () => {
+    expect(isWhitespaceOnlyEdit('hello ', 'hello  ')).toBe(true)
+    expect(isWhitespaceOnlyEdit('word', 'word ')).toBe(true)
+    expect(isWhitespaceOnlyEdit('', ' ')).toBe(true)
+    expect(isWhitespaceOnlyEdit('a b', 'a  b')).toBe(true)
+  })
+
+  it('keeps a word-boundary change (ab -> a b) as a real edit', () => {
+    expect(isWhitespaceOnlyEdit('ab', 'a b')).toBe(false)
+    expect(isWhitespaceOnlyEdit('cat', 'dog')).toBe(false)
+    expect(isWhitespaceOnlyEdit('', 'b ')).toBe(false)
+  })
+
+  it('collapseWhitespace normalizes runs and trims', () => {
+    expect(collapseWhitespace('  a   b  ')).toBe('a b')
   })
 })

@@ -3,11 +3,17 @@ import type { CommandProps } from '@tiptap/core'
 import type { Node as ProseMirrorNode } from '@tiptap/pm/model'
 import type { CompletionProvider, CompletionRequest } from '@conote/ai-core'
 
-import { diffWords } from './diff.js'
+import { normalizeReplacement } from './apply.js'
+import { diffWords, isWhitespaceOnlyEdit } from './diff.js'
 import { anchorHunk, buildDocTextIndex } from './locate.js'
 import { aiChangesPluginKey, createAiChangesPlugin } from './plugin.js'
 import { buildChangeMessages, stripFences } from './prompts.js'
-import type { AiChange, AiChangesOptions, AiChangesProposeOptions, AiChangesStorage } from './types.js'
+import type {
+  AiChange,
+  AiChangesOptions,
+  AiChangesProposeOptions,
+  AiChangesStorage,
+} from './types.js'
 
 let idCounter = 0
 
@@ -98,11 +104,7 @@ export const AiChanges = Extension.create<AiChangesOptions>({
           const selection = state.selection.empty
             ? null
             : { from: state.selection.from, to: state.selection.to }
-          const oldText = buildDocTextIndex(
-            state.doc,
-            selection?.from,
-            selection?.to,
-          ).text
+          const oldText = buildDocTextIndex(state.doc, selection?.from, selection?.to).text
           const request: CompletionRequest = {
             messages: buildChangeMessages(oldText, options.prompt),
             model: options.model ?? opts.defaultModel,
@@ -125,7 +127,13 @@ export const AiChanges = Extension.create<AiChangesOptions>({
           if (!dispatch) {
             return true
           }
-          tr.insertText(change.newText, change.range.from, change.range.to)
+          const applied = normalizeReplacement(
+            state.doc,
+            change.range.from,
+            change.range.to,
+            change.newText,
+          )
+          tr.insertText(applied.text, applied.from, applied.to)
           tr.setMeta(aiChangesPluginKey, { type: 'remove', id })
           return true
         },
@@ -158,7 +166,13 @@ export const AiChanges = Extension.create<AiChangesOptions>({
           // Apply right-to-left so earlier positions stay valid as we edit.
           const ordered = [...pluginState.changes].sort((a, b) => b.range.from - a.range.from)
           for (const change of ordered) {
-            tr.insertText(change.newText, change.range.from, change.range.to)
+            const applied = normalizeReplacement(
+              state.doc,
+              change.range.from,
+              change.range.to,
+              change.newText,
+            )
+            tr.insertText(applied.text, applied.from, applied.to)
           }
           tr.setMeta(aiChangesPluginKey, { type: 'clear' })
           return true
@@ -241,11 +255,16 @@ async function proposeChanges(
 
     const changes: AiChange[] = []
     for (const hunk of diffWords(index.text, newText)) {
+      const oldText = index.text.slice(hunk.oldStart, hunk.oldEnd)
+      // Drop hunks that only reflow whitespace: they render as a struck-through
+      // word replaced by the identical word — pure noise for the reviewer.
+      if (isWhitespaceOnlyEdit(oldText, hunk.newText)) {
+        continue
+      }
       const range = anchorHunk(index, hunk)
       if (!range) {
         continue
       }
-      const oldText = index.text.slice(hunk.oldStart, hunk.oldEnd)
       if (!isValidChange(doc, range.from, range.to, oldText)) {
         continue
       }
