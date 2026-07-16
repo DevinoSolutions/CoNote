@@ -1,0 +1,179 @@
+# CoNote upstream sync — automated weekly merge of ueberdosis/tiptap into main.
+# New file per fork rules: this never edits an upstream workflow or upstream file.
+# It only automates the "Staying in sync with upstream" flow documented in README.md
+# (add the `upstream` remote, fetch, merge) so the fork does not drift from Tiptap.
+#
+# The job runs entirely on git + the `gh` CLI — no pnpm/Node build is needed here,
+# so (unlike conote-ai.yml) there is no Node 24 setup step.
+name: CoNote upstream sync
+
+on:
+  # Weekly cadence: Mondays at 06:00 UTC. Cron on GitHub Actions is always UTC.
+  schedule:
+    - cron: "0 6 * * 1"
+  # Allow a maintainer to trigger an out-of-cycle sync from the Actions tab.
+  workflow_dispatch:
+
+# Only ever one sync in flight; a new run supersedes an in-progress one.
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
+# The default GITHUB_TOKEN needs to push the sync branch (contents) and open a PR
+# or a tracking issue (pull-requests / issues) — issues share the pull-requests scope.
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+jobs:
+  sync:
+    name: Merge upstream tiptap
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      # fetch-depth: 0 — a full history is required so `git merge upstream/main`
+      # and `git rev-list main..upstream/main` have every commit to reason about.
+      # persist-credentials (default true) leaves a token that can push the branch.
+      - name: Checkout main (full history)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: main
+
+      - name: Configure bot identity and upstream remote
+        run: |
+          set -euo pipefail
+          git config user.name "conote-upstream-sync[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          # Register the upstream remote idempotently. A fresh CI checkout has only
+          # `origin`; `set-url` covers the rare case where `upstream` already exists.
+          git remote add upstream https://github.com/ueberdosis/tiptap.git 2>/dev/null \
+            || git remote set-url upstream https://github.com/ueberdosis/tiptap.git
+          git fetch upstream main
+
+      # Count how many upstream commits are not yet on our main. Exposed as an
+      # output so the merge step can be skipped entirely when there is nothing new.
+      - name: Check for new upstream commits
+        id: check
+        run: |
+          set -euo pipefail
+          COUNT=$(git rev-list --count main..upstream/main)
+          echo "count=${COUNT}" >> "$GITHUB_OUTPUT"
+          echo "date=$(date -u +%Y-%m-%d)" >> "$GITHUB_OUTPUT"
+          if [ "$COUNT" -eq 0 ]; then
+            echo "::notice::CoNote main is already up to date with upstream/main — nothing to merge."
+          else
+            echo "::notice::${COUNT} upstream commit(s) to merge."
+          fi
+
+      # Everything below only runs when there is at least one new upstream commit.
+      - name: Create sync branch and merge upstream
+        if: steps.check.outputs.count != '0'
+        env:
+          # gh reads GH_TOKEN for `pr`/`issue` operations; the default token suffices.
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # NOTE: no `set -e` here — the merge is expected to fail on conflicts and
+          # that path must NOT abort the script. `-u`/pipefail stay on; unexpected
+          # git failures are turned into an explicit `exit 1` below.
+          set -uo pipefail
+
+          DATE="${{ steps.check.outputs.date }}"
+          BRANCH="upstream-sync/${DATE}"
+
+          # Duplicate guard: if a sync PR from an earlier run is still open, a human
+          # has not merged it yet. Stacking another PR on top would just create noise,
+          # so skip this run (success) and let the open one be dealt with first.
+          EXISTING_PR=$(gh pr list --state open --base main \
+            --json number,headRefName \
+            --jq 'map(select(.headRefName | startswith("upstream-sync/"))) | .[0].number // empty')
+          if [ -n "$EXISTING_PR" ]; then
+            echo "::notice::Upstream-sync PR #${EXISTING_PR} is still open — skipping to avoid a duplicate."
+            exit 0
+          fi
+
+          # Fresh branch off the current main for the merge attempt.
+          git checkout -b "$BRANCH"
+
+          if git merge upstream/main --no-edit; then
+            # ---- Outcome 1: clean merge --------------------------------------
+            # Push the branch and open a PR to main. The PR — not a direct push —
+            # is deliberate so CoNote CI runs and a human approves before merge.
+            git push origin "$BRANCH"
+
+            COMMITS=$(git log --oneline main..upstream/main | head -50)
+            gh pr create \
+              --base main \
+              --head "$BRANCH" \
+              --title "chore: merge upstream tiptap (${DATE})" \
+              --body "$(cat <<EOF
+          Automated weekly merge of \`upstream/main\` (ueberdosis/tiptap) into \`main\`.
+
+          This merge was clean (no conflicts). All CoNote code lives in \`packages/conote-*\`
+          and upstream packages are left untouched, so upstream merges are expected to be
+          near-conflict-free.
+
+          ## Upstream commits included (up to 50)
+          \`\`\`
+          ${COMMITS}
+          \`\`\`
+
+          ## Before merging
+          - CI, **including the CoNote AI workflow**, must pass.
+          - Because this PR was opened by the Actions bot using \`GITHUB_TOKEN\`, it may not
+            automatically trigger workflows. A maintainer should close and reopen the PR
+            (or push an empty commit) to kick off CI before merging.
+          EOF
+          )"
+            echo "::notice::Opened upstream-sync PR for ${BRANCH}."
+            exit 0
+          fi
+
+          # ---- Merge did not complete --------------------------------------
+          # Distinguish an EXPECTED content conflict (unmerged 'U' paths present)
+          # from an UNEXPECTED git error (e.g. bad object, network) which has none.
+          CONFLICTS=$(git diff --name-only --diff-filter=U)
+          if [ -z "$CONFLICTS" ]; then
+            # No conflict markers => something else went wrong. Fail loudly (red run).
+            echo "::error::git merge failed but produced no conflicting files — unexpected git error."
+            git merge --abort || true
+            exit 1
+          fi
+
+          # ---- Outcome 2: merge conflicts ----------------------------------
+          # Expected-but-manual case. Record the conflicting files, abort the merge
+          # so the checkout is clean, and file/update a tracking issue. Exit success:
+          # a conflict needing human help is NOT a workflow failure.
+          echo "Conflicting files:"
+          echo "$CONFLICTS"
+          git merge --abort
+
+          TITLE="Upstream sync conflicts (${DATE})"
+          ISSUE_BODY="$(cat <<EOF
+          The automated upstream sync could not merge \`upstream/main\` (ueberdosis/tiptap)
+          into \`main\` cleanly on ${DATE}. The merge was aborted; no branch was pushed.
+
+          ## Conflicting files
+          \`\`\`
+          ${CONFLICTS}
+          \`\`\`
+
+          Resolve manually by following README.md "Staying in sync with upstream":
+          \`git fetch upstream && git merge upstream/main\`, resolve the files above, then
+          open a PR to \`main\`.
+          EOF
+          )"
+
+          # Reuse an already-open issue with the same title (e.g. a re-run on the same
+          # day) instead of opening a second one; otherwise create a fresh issue.
+          EXISTING_ISSUE=$(gh issue list --state open --limit 100 \
+            --json number,title \
+            --jq 'map(select(.title == "'"$TITLE"'")) | .[0].number // empty')
+          if [ -n "$EXISTING_ISSUE" ]; then
+            gh issue comment "$EXISTING_ISSUE" --body "$ISSUE_BODY"
+            echo "::notice::Updated existing conflict issue #${EXISTING_ISSUE}."
+          else
+            gh issue create --title "$TITLE" --body "$ISSUE_BODY"
+            echo "::notice::Opened a new upstream-sync conflict issue."
+          fi
