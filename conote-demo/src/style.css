@@ -335,6 +335,206 @@ header p {
   color: var(--error);
 }
 
+/* --- Edit with AI panel --- */
+
+.changes {
+  margin-bottom: 16px;
+}
+
+.changes-bar {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 8px;
+  width: 100%;
+}
+
+.changes-bar input {
+  flex: 1;
+  padding: 6px 10px;
+  font-size: 0.85rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--fg);
+}
+
+.changes-bar button {
+  padding: 6px 12px;
+  font-size: 0.85rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--fg);
+  cursor: pointer;
+}
+
+.changes-bar button.primary {
+  background: var(--accent);
+  color: var(--accent-fg);
+  border-color: var(--accent);
+}
+
+.changes-status {
+  display: flex;
+  gap: 12px;
+  align-items: baseline;
+  padding: 8px 12px;
+  font-size: 0.85rem;
+  background: var(--status-bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.changes-status .label {
+  color: var(--muted);
+}
+
+.changes-status .state {
+  font-weight: 600;
+}
+
+.changes-status .state[data-state="error"] {
+  color: var(--error);
+}
+
+.changes-status .error {
+  color: var(--error);
+}
+
+.changes-status .spacer {
+  flex: 1;
+}
+
+.changes-status button {
+  padding: 3px 10px;
+  font-size: 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--fg);
+  cursor: pointer;
+}
+
+.changes-status button:hover {
+  border-color: var(--accent);
+}
+
+/* --- Change cards in the sidebar --- */
+
+.sidebar-head--changes {
+  margin-top: 16px;
+}
+
+.change-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.change-empty {
+  font-size: 0.8rem;
+  color: var(--muted);
+  padding: 8px 4px;
+}
+
+.change-card {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  padding: 8px 10px;
+}
+
+.change-card--selected {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+
+.change-body {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: none;
+  padding: 0;
+  margin: 0;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.change-diff {
+  font-size: 0.82rem;
+  line-height: 1.4;
+  word-break: break-word;
+}
+
+.change-delete {
+  text-decoration: line-through;
+  color: var(--muted);
+}
+
+.change-arrow {
+  color: var(--muted);
+}
+
+.change-insert {
+  font-weight: 700;
+}
+
+.change-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.change-actions button {
+  padding: 3px 10px;
+  font-size: 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--fg);
+  cursor: pointer;
+}
+
+.change-actions .accept {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.change-actions .reject:hover {
+  border-color: var(--error);
+  color: var(--error);
+}
+
+/* --- AI change decorations in the document --- */
+
+.conote-ai-change-del {
+  text-decoration: line-through;
+  background: color-mix(in srgb, #e11d48 12%, transparent);
+  border-radius: 2px;
+}
+
+.conote-ai-change-ins {
+  background: color-mix(in srgb, #16a34a 16%, transparent);
+  border-radius: 2px;
+}
+
+.conote-ai-change-del--selected {
+  background: color-mix(in srgb, #e11d48 26%, transparent);
+  outline: 1px solid #e11d48;
+}
+
+.conote-ai-change-ins--selected {
+  background: color-mix(in srgb, #16a34a 32%, transparent);
+  outline: 1px solid #16a34a;
+}
+
 /* --- Suggestion decorations in the document --- */
 
 .conote-ai-suggestion {

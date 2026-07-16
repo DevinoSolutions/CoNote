@@ -24,6 +24,10 @@ export default defineConfig({
         find: /^@conote\/extension-ai-suggestion$/,
         replacement: fromRoot('../packages/conote-extension-ai-suggestion/src/index.ts'),
       },
+      {
+        find: /^@conote\/extension-ai-changes$/,
+        replacement: fromRoot('../packages/conote-extension-ai-changes/src/index.ts'),
+      },
       // The extension source lives outside this project's tree, so node_modules
       // walking from it misses the demo's install. Pin the exact tiptap
       // specifiers it imports to the demo's copies (this also dedupes @tiptap/core

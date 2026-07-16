@@ -5,6 +5,8 @@ import { Ai } from '@conote/extension-ai'
 import type { AiStorage } from '@conote/extension-ai'
 import { AiSuggestion } from '@conote/extension-ai-suggestion'
 import type { AiSuggestionRule, AiSuggestionStorage } from '@conote/extension-ai-suggestion'
+import { AiChanges } from '@conote/extension-ai-changes'
+import type { AiChangesStorage } from '@conote/extension-ai-changes'
 import './style.css'
 
 // Proxy mode: no apiKey in the browser. The provider posts to the local proxy,
@@ -56,6 +58,21 @@ app.innerHTML = `
       <span class="error" id="ai-error" data-testid="ai-error"></span>
     </div>
 
+    <div class="changes">
+      <div class="changes-bar">
+        <input id="change-prompt" data-testid="change-prompt" type="text" placeholder="e.g. Make the text more formal" />
+        <button id="propose-changes" data-testid="propose-changes" class="primary" title="Propose reviewable AI changes for the selection or document">Propose changes</button>
+      </div>
+      <div class="changes-status">
+        <span class="label">Edit with AI:</span>
+        <span class="state" id="changes-status" data-testid="changes-status" data-state="idle">idle</span>
+        <span class="error" id="changes-error" data-testid="changes-error"></span>
+        <span class="spacer"></span>
+        <button id="accept-all-changes" data-testid="accept-all-changes" title="Accept every proposed change">Accept all</button>
+        <button id="reject-all-changes" data-testid="reject-all-changes" title="Reject every proposed change">Reject all</button>
+      </div>
+    </div>
+
     <div class="proofread">
       <div class="proofread-main">
         <div class="proofread-bar">
@@ -75,6 +92,10 @@ app.innerHTML = `
           </div>
         </div>
         <ul class="suggestion-list" id="suggestion-list" data-testid="suggestion-list"></ul>
+        <div class="sidebar-head sidebar-head--changes">
+          <h2>Changes</h2>
+        </div>
+        <ul class="change-list" id="change-list" data-testid="change-list"></ul>
       </aside>
     </div>
 
@@ -96,6 +117,10 @@ const editor = new Editor({
       provider,
       defaultModel: 'anthropic/claude-haiku-4.5',
       rules: SUGGESTION_RULES,
+    }),
+    AiChanges.configure({
+      provider,
+      defaultModel: 'anthropic/claude-haiku-4.5',
     }),
   ],
   content: SAMPLE_CONTENT,
@@ -254,3 +279,115 @@ editor.on('transaction', renderSuggestions)
 editor.on('update', renderSuggestions)
 window.setInterval(renderSuggestions, 150)
 renderSuggestions()
+
+// --- Edit with AI panel ----------------------------------------------------
+
+const changesStatusEl = document.querySelector<HTMLElement>('#changes-status')!
+const changesErrorEl = document.querySelector<HTMLElement>('#changes-error')!
+const changeListEl = document.querySelector<HTMLUListElement>('#change-list')!
+const changePromptInput = document.querySelector<HTMLInputElement>('#change-prompt')!
+
+function proposeChanges(): void {
+  const prompt = changePromptInput.value.trim()
+  if (prompt) {
+    editor.chain().focus().aiChangesPropose({ prompt }).run()
+  }
+}
+
+on('#propose-changes', proposeChanges)
+changePromptInput.addEventListener('keydown', event => {
+  if (event.key === 'Enter') {
+    event.preventDefault()
+    proposeChanges()
+  }
+})
+on('#accept-all-changes', () => editor.chain().focus().aiChangesAcceptAll().run())
+on('#reject-all-changes', () => editor.chain().aiChangesRejectAll().run())
+
+/** Selects a change and scrolls its inline decoration into view. */
+function selectChange(id: string): void {
+  editor.chain().aiChangesSelect(id).run()
+  const decoration = editor.view.dom.querySelector(
+    '.conote-ai-change-del--selected, .conote-ai-change-ins--selected',
+  )
+  decoration?.scrollIntoView({ block: 'center', behavior: 'smooth' })
+}
+
+/** Builds one change card. `index` drives the accept/reject test ids. */
+function renderChangeCard(
+  change: AiChangesStorage['changes'][number],
+  index: number,
+  selectedId: string | null,
+): HTMLLIElement {
+  const card = document.createElement('li')
+  card.className = 'change-card'
+  card.dataset.testid = `change-${index}`
+  card.dataset.changeId = change.id
+  if (change.id === selectedId) {
+    card.classList.add('change-card--selected')
+  }
+
+  const body = document.createElement('button')
+  body.type = 'button'
+  body.className = 'change-body'
+  body.title = 'Highlight this change in the document'
+  body.addEventListener('click', () => selectChange(change.id))
+
+  const diff = document.createElement('span')
+  diff.className = 'change-diff'
+  const del = document.createElement('span')
+  del.className = 'change-delete'
+  del.textContent = change.oldText || '∅'
+  const arrow = document.createElement('span')
+  arrow.className = 'change-arrow'
+  arrow.textContent = ' → '
+  const ins = document.createElement('span')
+  ins.className = 'change-insert'
+  ins.textContent = change.newText || '∅'
+  diff.append(del, arrow, ins)
+  body.appendChild(diff)
+  card.appendChild(body)
+
+  const actions = document.createElement('div')
+  actions.className = 'change-actions'
+  const accept = document.createElement('button')
+  accept.className = 'accept'
+  accept.dataset.testid = `accept-change-${index}`
+  accept.textContent = 'Accept'
+  accept.addEventListener('click', () => editor.chain().focus().aiChangesAccept(change.id).run())
+  const reject = document.createElement('button')
+  reject.className = 'reject'
+  reject.dataset.testid = `reject-change-${index}`
+  reject.textContent = 'Reject'
+  reject.addEventListener('click', () => editor.chain().aiChangesReject(change.id).run())
+  actions.append(accept, reject)
+  card.appendChild(actions)
+
+  return card
+}
+
+function renderChanges(): void {
+  const storage = editor.storage.aiChanges as AiChangesStorage
+  changesStatusEl.textContent = storage.state
+  changesStatusEl.dataset.state = storage.state
+  changesErrorEl.textContent =
+    storage.state === 'error' && storage.error ? storage.error.message : ''
+
+  changeListEl.replaceChildren()
+  if (storage.changes.length === 0) {
+    const empty = document.createElement('li')
+    empty.className = 'change-empty'
+    empty.textContent =
+      storage.state === 'loading' ? 'Proposing…' : 'No changes. Type an instruction and propose.'
+    changeListEl.appendChild(empty)
+    return
+  }
+  storage.changes.forEach((change, index) => {
+    changeListEl.appendChild(renderChangeCard(change, index, storage.selectedId))
+  })
+}
+
+editor.on('transaction', renderChanges)
+editor.on('update', renderChanges)
+window.setInterval(renderChanges, 150)
+renderChanges()
