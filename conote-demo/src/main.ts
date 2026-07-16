@@ -7,6 +7,8 @@ import { AiSuggestion } from '@conote/extension-ai-suggestion'
 import type { AiSuggestionRule, AiSuggestionStorage } from '@conote/extension-ai-suggestion'
 import { AiChanges } from '@conote/extension-ai-changes'
 import type { AiChangesStorage } from '@conote/extension-ai-changes'
+import { AiAgent } from '@conote/extension-ai-agent'
+import type { AiAgentStorage } from '@conote/extension-ai-agent'
 import './style.css'
 
 // Proxy mode: no apiKey in the browser. The provider posts to the local proxy,
@@ -73,6 +75,22 @@ app.innerHTML = `
       </div>
     </div>
 
+    <div class="agent">
+      <div class="agent-head">
+        <h2>Agent</h2>
+        <span class="agent-state" id="agent-status" data-testid="agent-status" data-state="idle">idle</span>
+        <span class="error" id="agent-error" data-testid="agent-error"></span>
+      </div>
+      <div class="agent-transcript" id="agent-transcript" data-testid="agent-transcript"></div>
+      <div class="agent-hint" id="agent-staged-hint" data-testid="agent-staged-hint" hidden></div>
+      <div class="agent-bar">
+        <input id="agent-input" data-testid="agent-input" type="text" placeholder="Ask the agent to edit the document (e.g. 'fix the typos')" />
+        <button id="agent-send" data-testid="agent-send" class="primary" title="Send a message to the agent">Send</button>
+        <button id="agent-abort" data-testid="agent-abort" class="danger" title="Abort the in-flight agent run">Abort</button>
+        <button id="agent-reset" data-testid="agent-reset" title="Clear the transcript">Reset</button>
+      </div>
+    </div>
+
     <div class="proofread">
       <div class="proofread-main">
         <div class="proofread-bar">
@@ -121,6 +139,11 @@ const editor = new Editor({
     AiChanges.configure({
       provider,
       defaultModel: 'anthropic/claude-haiku-4.5',
+    }),
+    AiAgent.configure({
+      provider,
+      defaultModel: 'anthropic/claude-haiku-4.5',
+      applyMode: 'review',
     }),
   ],
   content: SAMPLE_CONTENT,
@@ -391,3 +414,75 @@ editor.on('transaction', renderChanges)
 editor.on('update', renderChanges)
 window.setInterval(renderChanges, 150)
 renderChanges()
+
+// --- Agent panel -----------------------------------------------------------
+
+const agentStatusEl = document.querySelector<HTMLElement>('#agent-status')!
+const agentErrorEl = document.querySelector<HTMLElement>('#agent-error')!
+const agentTranscriptEl = document.querySelector<HTMLElement>('#agent-transcript')!
+const agentHintEl = document.querySelector<HTMLElement>('#agent-staged-hint')!
+const agentInput = document.querySelector<HTMLInputElement>('#agent-input')!
+const agentSendBtn = document.querySelector<HTMLButtonElement>('#agent-send')!
+
+function sendAgentMessage(): void {
+  const message = agentInput.value.trim()
+  const storage = editor.storage.aiAgent as AiAgentStorage
+  if (message && storage.state !== 'working') {
+    editor.commands.aiAgentSend(message)
+    agentInput.value = ''
+  }
+}
+
+on('#agent-send', sendAgentMessage)
+agentInput.addEventListener('keydown', event => {
+  if (event.key === 'Enter') {
+    event.preventDefault()
+    sendAgentMessage()
+  }
+})
+on('#agent-abort', () => editor.commands.aiAgentAbort())
+on('#agent-reset', () => editor.commands.aiAgentReset())
+
+/** Builds one chat bubble for a transcript turn. */
+function renderBubble(turn: AiAgentStorage['transcript'][number]): HTMLDivElement {
+  const bubble = document.createElement('div')
+  bubble.className = `agent-bubble agent-bubble--${turn.role}`
+  bubble.textContent = turn.content
+  return bubble
+}
+
+function renderAgent(): void {
+  const storage = editor.storage.aiAgent as AiAgentStorage
+  agentStatusEl.textContent = storage.state
+  agentStatusEl.dataset.state = storage.state
+  agentErrorEl.textContent =
+    storage.state === 'error' && storage.error ? storage.error.message : ''
+
+  agentSendBtn.disabled = storage.state === 'working'
+
+  agentTranscriptEl.replaceChildren()
+  if (storage.transcript.length === 0) {
+    const empty = document.createElement('div')
+    empty.className = 'agent-empty'
+    empty.textContent = 'No messages yet. Ask the agent to edit the document.'
+    agentTranscriptEl.appendChild(empty)
+  } else {
+    storage.transcript.forEach(turn => {
+      agentTranscriptEl.appendChild(renderBubble(turn))
+    })
+  }
+
+  // After a run finishes, surface how many edits were staged for review.
+  if (storage.state !== 'working' && storage.lastStagedCount > 0) {
+    agentHintEl.hidden = false
+    agentHintEl.textContent = `${storage.lastStagedCount} edit(s) staged — review them in the Changes panel.`
+  } else {
+    agentHintEl.hidden = true
+    agentHintEl.textContent = ''
+  }
+}
+
+editor.on('transaction', renderAgent)
+editor.on('update', renderAgent)
+window.setInterval(renderAgent, 150)
+renderAgent()
